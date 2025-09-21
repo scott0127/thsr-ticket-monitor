@@ -436,53 +436,68 @@ def check_thsr_tickets():
                 captcha_retry_count = 0
                 monitoring_round += 1
             
-            # 情況 3: 查詢成功，有可預訂班次
-            elif 'uk-alert-danger' not in result_source and ('班次' in result_source or 'train' in result_source or '車次' in result_source):
-                # 進一步檢查是否真的有可訂票班次
-                if '訂票' in result_source and '額滿' not in result_source:
+            # 情況 3: 查詢成功（排除法：不是驗證碼錯誤也不是查無票）
+            else:
+                # 檢查當前 URL 是否已經跳轉到結果頁面
+                current_url = driver.current_url
+                print(f"當前頁面 URL: {current_url}")
+                
+                # 如果 URL 包含結果相關的路徑，或者頁面內容不包含錯誤訊息，就視為成功
+                if ('irs.thsrc.com.tw' in current_url and 
+                    ('result' in current_url.lower() or 'booking' in current_url.lower() or 
+                     current_url != 'https://irs.thsrc.com.tw/IMINT/?locale=tw')):
+                    
                     print("\n" + "*"*60)
-                    print("🎉 查詢有票！趕快訂購！")
+                    print("🎉 查詢成功！頁面已跳轉到結果頁面")
                     print("*"*60)
                     print(f"查詢目標：{SEARCH_DATE} 從 {START_STATION} 到 {END_STATION}")
-                    print("請儘速前往高鐵網站訂票：https://irs.thsrc.com.tw/")
+                    print(f"結果頁面：{current_url}")
+                    print("請儘速前往高鐵網站確認並訂票：https://irs.thsrc.com.tw/")
                     print("*"*60 + "\n")
                     
                     # 發送 LINE 通知 - 找到車票
-                    success_message = f"🎉 高鐵有票了！\n{SEARCH_DATE} {SEARCH_TIME}\n{START_STATION} → {END_STATION}\n請儘速前往訂票：https://irs.thsrc.com.tw/"
+                    success_message = f"🎉 高鐵查詢成功！\n{SEARCH_DATE} {SEARCH_TIME}\n{START_STATION} → {END_STATION}\n頁面已跳轉到結果頁面\n請儘速前往確認：{current_url}"
                     send_line_message(success_message)
                     
-                    return True, ["找到可預訂班次"]  # 返回成功結果
+                    return True, ["查詢成功，頁面已跳轉"]
+                
+                # 如果頁面沒有跳轉，但也沒有明確的錯誤，檢查頁面內容
+                elif ('班次' in result_source or '車次' in result_source or 'train' in result_source or 
+                      '時刻' in result_source or '票價' in result_source):
+                    
+                    print("\n" + "*"*60)
+                    print("🎉 查詢成功！找到班次資訊")
+                    print("*"*60)
+                    print(f"查詢目標：{SEARCH_DATE} 從 {START_STATION} 到 {END_STATION}")
+                    print("請儘速前往高鐵網站確認並訂票：https://irs.thsrc.com.tw/")
+                    print("*"*60 + "\n")
+                    
+                    # 發送 LINE 通知 - 找到車票
+                    success_message = f"🎉 高鐵查詢成功！\n{SEARCH_DATE} {SEARCH_TIME}\n{START_STATION} → {END_STATION}\n找到班次資訊\n請儘速前往訂票：https://irs.thsrc.com.tw/"
+                    send_line_message(success_message)
+                    
+                    return True, ["查詢成功，找到班次資訊"]
+                
+                # 如果都不符合，保存頁面供分析但繼續嘗試
                 else:
-                    print("⚠️ 有班次資訊但無可預訂座位，等待後重試...")
-                    # 按照查無可預訂的邏輯處理
-                    for remaining in range(CHECK_INTERVAL_SECONDS, 0, -1):
-                        print(f"等待中... 剩餘 {remaining} 秒", end='\r', flush=True)
-                        time.sleep(1)
-                    print(f"\n冷卻時間結束，重新查詢...")
-                    captcha_retry_count = 0
-                    monitoring_round += 1
-                    continue
-            
-            # 情況 4: 其他未知結果
-            else:
-                print("⚠️ 查詢結果不明確，保存頁面供分析...")
-                with open('unknown_result.html', 'w', encoding='utf-8') as f:
-                    f.write(driver.page_source)
-                print("已保存結果頁面至 unknown_result.html")
-                
-                # 檢查是否有任何錯誤訊息
-                if 'uk-alert-danger' in result_source:
-                    print("發現錯誤訊息，但無法識別具體類型")
-                    try:
-                        from bs4 import BeautifulSoup
-                        soup = BeautifulSoup(driver.page_source, 'html.parser')
-                        error_msgs = soup.select('.feedbackPanelERROR')
-                        for msg in error_msgs:
-                            print(f"錯誤訊息: {msg.get_text().strip()}")
-                    except:
-                        pass
-                
-                return False, ["未知錯誤"]  # 返回失敗結果
+                    print("⚠️ 查詢結果不明確，但可能是成功，保存頁面供分析...")
+                    with open('unknown_result.html', 'w', encoding='utf-8') as f:
+                        f.write(driver.page_source)
+                    print("已保存結果頁面至 unknown_result.html")
+                    print("由於不是明確的錯誤，將此視為可能的成功結果")
+                    
+                    print("\n" + "*"*60)
+                    print("🎉 查詢可能成功！（結果不明確但無明顯錯誤）")
+                    print("*"*60)
+                    print(f"查詢目標：{SEARCH_DATE} 從 {START_STATION} 到 {END_STATION}")
+                    print("請手動檢查高鐵網站確認結果：https://irs.thsrc.com.tw/")
+                    print("*"*60 + "\n")
+                    
+                    # 發送 LINE 通知 - 可能找到車票
+                    success_message = f"🤔 高鐵查詢結果不明確\n{SEARCH_DATE} {SEARCH_TIME}\n{START_STATION} → {END_STATION}\n無明顯錯誤，可能成功\n請手動確認：https://irs.thsrc.com.tw/"
+                    send_line_message(success_message)
+                    
+                    return True, ["查詢結果不明確，但可能成功"]
         
     except Exception as e:
         print(f"查詢過程中發生錯誤: {e}")
